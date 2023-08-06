@@ -1,0 +1,202 @@
+---
+title: "The impact of weather events in public health and economy based on the analysis of the NOAA storm database"
+author: "Bruno"
+date: "`r Sys.Date()`"
+output: 
+        html_document:
+                number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Synopsis 
+In this work, we explore and analyze the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database in order to determine the two weather events that resulted in the highest impact on the US population's health and caused the largest economic consequences, respectively. Throughout our analysis, we concluded that **tornadoes** were the weather events that most impacted the number of fatalities and injuries; moreover, from the economic perspective, **floods** were responsible for the largest financial losses.
+
+# Introduction 
+
+It is known that extreme weather events can have a significant impact on public health and the economy. Such events may result in fatalities, injuries, and property and crop damage. Therefore, preventing such outcomes to the extent possible is in the public interest.
+
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. The data in the form of a comma-separated-value file was compressed via the bzip2 algorithm to reduce its size. You can download the file from the website:
+
+- [Storm Data](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2) [47Mb]
+
+There is also some documentation of the database available. Here you will find how some of the variables were constructed/defined.
+
+- National Weather Service [Storm Data Documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf)
+
+- National Climatic Data Center Storm Events [FAQ](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf)
+
+The events in the database start in the year 1950 and end in November 2011. In the earlier years of the database, there were generally fewer events recorded, most likely due to a lack of good records. More recent years should be considered more complete.
+
+# Data Processing
+
+In this work, the data was processed by using the following packages: **tidyverse** and **reshape2**. 
+
+```{r Packages}
+library(tidyverse)
+library(reshape2)
+```
+
+First, we read the CSV file called *repdata_data_StormData.csv* located in the same folder as this R Markdown file.
+
+```{r Loading, cache = TRUE}
+data <- read.csv("repdata_data_StormData.csv")
+```
+
+## Inspecting data
+
+Let us start by inspecting the data. First, we check the class and values of each variable present in the dataset.
+
+```{r Structure}
+str(data)
+```
+
+In the following, we summarize each variable in order to detect possible outliers or wrong entries of numerical values. 
+
+```{r Summary}
+summary(data)
+```
+
+## Trimming spaces
+
+In order to inspect the variables whose values are strings, we introduce a list called unique_values containing
+the unique values of each variable sorted in ascending order. 
+
+```{r Unique values, cache = TRUE}
+unique_values <-
+        lapply(
+                X = data,
+                FUN = function(x)
+                        sort(unique(x))
+        )
+```
+
+Through the inspection of the unique values of EVTYPE, we note that there are some leading and trailing spaces that should be trimmed. 
+
+```{r Print unique}
+head(unique_values$EVTYPE, n = 10)
+```
+
+Therefore, we removed all leading and trailing spaces present in character variables.
+
+```{r Trim}
+for (i in 1:ncol(data))
+        if (is.character(data[, i]))
+                data[, i] <- trimws(data[, i])
+```
+
+After formatting the data in a consistent format, we can confirm that there are no duplicates in our data.
+
+```{r Duplicates}
+sum(duplicated(data))
+```
+
+## Handling exponent values
+
+Since variables such as PROPDMGEXP and CROPDMGEXP can only take the values: H, h, K, k, M, m, B, b, +, -, ?, 0, 1, 2, 3, 4, 5, 6, 7, 8, and blank-character, we have to replace these codes by their corresponding numerical values. In this [link](https://rstudio-pubs-static.s3.amazonaws.com/58957_37b6723ee52b455990e149edde45e5b6.html),
+the reader can find more information on how to handle this issue. The following code address the aforementioned problem.
+
+```{r Exponent}
+
+EXP <- data.frame(
+        Code = c("H","h","K","k","M","m","B","b","+","-","?","0","1","2","3","4","5","6","7","8",""), 
+        Number = c(10^2, 10^2, 10^3, 10^3, 10^6, 10^6, 10^9, 10^9, 1, 0, 0, 10, 10, 10, 10, 10, 10, 10, 10, 10, 0)
+        )
+
+data$PROPDMGEXP <- EXP$Number[match(data$PROPDMGEXP, EXP$Code)]
+data$CROPDMGEXP <- EXP$Number[match(data$CROPDMGEXP, EXP$Code)]
+```
+
+## Selecting data
+
+Here, we select only the variables that will be useful in our analysis. We introduce the variables Property.Damage and Crop.Damage, which consist of PROPDMG and CROPDMG multiplied by their respective exponent values. The variables that are going to be used in our analysis are EVTYPE, FATALITIES, INJURIES, Property.Damage and Crop.Damage. 
+
+```{r Select}
+data <- data %>%
+        mutate(Property.Damage = PROPDMG * PROPDMGEXP,
+               Crop.Damage = CROPDMG * CROPDMGEXP) %>%
+        select(
+                Event = EVTYPE,
+                Fatalities = FATALITIES,
+                Injuries = INJURIES,
+                Property.Damage,
+                Crop.Damage
+        )
+```
+
+As the last step in our data cleaning process, we confirm that there are no missing values in our data.
+
+```{r Complete cases}
+sum(!complete.cases(data))
+```
+
+# Analysis
+
+In order to calculate the impact of each weather event on the number of fatalities and injuries, we group our data according to each event and calculate the total number of fatalities and injuries within each group. The following table shows the total number of fatalities and total injuries with respect to the top 10 events with the largest total impact (fatalities + injuries) on people's health. 
+
+```{r Summary1}
+summary1 <- data %>%
+        group_by(Event) %>%
+        summarize(Fatalities = sum(Fatalities),
+                  Injuries = sum(Injuries)) %>%
+        mutate(Total = Fatalities + Injuries) %>%
+        arrange(desc(Total))
+
+head(summary1, n = 10)
+```
+
+Analogously as before, we group our data according to each weather event and calculate the total cost damage related to properties and crops. In the following summary, we show the costs associated with the top 10 events with the highest (total) economic impact on the US economy.
+
+```{r Summary2}
+summary2 <- data %>%
+        group_by(Event) %>%
+        summarize(Property = sum(Property.Damage),
+                  Crop = sum(Crop.Damage)) %>%
+        mutate(Total = Property + Crop) %>%
+        arrange(desc(Total))
+
+head(summary2, n = 10)
+```
+
+# Results
+
+In the following, we construct a bar plot containing the total number of fatalities and injuries for the top 10 weather events with the highest impact on US public health. According to this plot, the weather event that was most harmful to people's health was the occurrence of **tornadoes**. 
+
+
+```{r Plot1, fig.cap = "Figure 1. Top 10 weather events with the highest impact on the US public health"}
+impact1 <-
+        melt(
+                summary1[1:10,],
+                id.vars = 1,
+                variable.name = "Type",
+                value.name = "Count"
+        )
+
+ggplot(impact1, aes(x = reorder(Event, -Count), y = Count)) +
+        geom_bar(stat = "identity", aes(fill = Type), position = "dodge") +
+        ylab("Count") +
+        xlab("Event Type") +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        ggtitle("Top 10 US Weather Events that are Most Harmful to Population")
+```
+
+We also explore the top 10 weather events with the highest economic impact on the US economy. In the following plot, we consider all these top 10 events and separately show the economic impact (in billion of Dollars) related to property damage and crop damage. By analyzing the plot below, we conclude that **floods** were responsible for the highest economic impact in the US.
+
+```{r Plot2, fig.cap = "Figure 2. Top 10 weather events with the highest impact on the US economy"}
+impact2 <-
+        melt(
+                summary2[1:10,],
+                id.vars = 1,
+                variable.name = "Type",
+                value.name = "Count"
+        )
+
+ggplot(impact2, aes(x = reorder(Event, -Count), y = Count / 10^9)) +
+        geom_bar(stat = "identity", aes(fill = Type), position = "dodge") +
+        ylab("Economical impact (in billion of Dollars) ") +
+        xlab("Event Type") +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        ggtitle("Top 10 US Weather Events with Highest Economical Impact")
+```
